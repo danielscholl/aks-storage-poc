@@ -2,7 +2,7 @@
 
 **Secure AKS and Azure Storage Integration Without Secrets**
 
-> Kubernetes teams adopting Azure face a critical challenge: securely accessing persistent storage without violating modern security standards. This proof-of-concept attempts to demonstrate how to leverage storage removing the dependency of keys using Microsoft Entra Workload Identity.
+> Kubernetes teams adopting Azure face a critical challenge: `securely accessing persistent storage without violating modern security standards`. This proof-of-concept attempts to demonstrate how to leverage storage removing the dependency of keys using Microsoft Entra Workload Identity.
 
 ## Purpose
 
