@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${NAME}
+  namespace: ${NAMESPACE}
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: ${SERVICE_ACCOUNT}
+      volumes:
+      - name: script
+        configMap:
+          name: ${CONFIGMAP_NAME}
+          defaultMode: 0500
+      - name: storage
+        persistentVolumeClaim:
+          claimName: ${PVC_NAME}
+      initContainers:
+      - name: creator
+        image: mcr.microsoft.com/cbl-mariner/base/core:2.0
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "Executing ${STORAGE_TYPE} storage script..."
+          /script/init.sh
+        volumeMounts:
+          - name: script
+            mountPath: "/script"
+          - name: storage
+            mountPath: "/${MOUNT_PATH}"
+      containers:
+      - name: completion
+        image: alpine:latest
+        command: ["/bin/sh", "-c", "echo '${STORAGE_TYPE} storage job completed' && sleep 10"]
+      restartPolicy: Never 

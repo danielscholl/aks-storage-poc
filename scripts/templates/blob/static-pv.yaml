@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blob-static-pv
+  annotations:
+    pv.kubernetes.io/provisioned-by: blob.csi.azure.com
+spec:
+  capacity:
+    storage: 1Pi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: azureblob-fuse-premium
+  mountOptions:
+    - -o allow_other
+    - --file-cache-timeout-in-seconds=120
+    - --use-attr-cache=true
+    - --cancel-list-on-mount-seconds=0
+    - --log-level=LOG_DEBUG
+  csi:
+    driver: blob.csi.azure.com
+    volumeHandle: "${RESOURCE_GROUP}#${STORAGE_ACCOUNT}#${CONTAINER_NAME}"
+    volumeAttributes:
+      storageaccount: "${STORAGE_ACCOUNT}"
+      containerName: "${CONTAINER_NAME}"
+      clientID: "${CLIENT_ID}"
+      resourcegroup: "${RESOURCE_GROUP}"
+      protocol: fuse 

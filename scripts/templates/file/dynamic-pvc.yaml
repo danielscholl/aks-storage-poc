@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-storage-pvc
+  namespace: ${NAMESPACE}
+  annotations:
+    csi.storage.k8s.io/share-name: "dynamic-storage-logs"
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: dynamic-storage
+  resources:
+    requests:
+      storage: 5Gi 

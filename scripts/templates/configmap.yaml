@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${NAME}
+  namespace: ${NAMESPACE}
+data:
+  init.sh: |
+    #!/bin/sh
+    echo "Hello World! Creating a file in the ${STORAGE_TYPE} storage directory..."
+    echo "This file was created by a Kubernetes Job using ${STORAGE_TYPE} storage on \$(date)" > /${MOUNT_PATH}/${STORAGE_TYPE}-hello.txt
+    echo "File created successfully!" 

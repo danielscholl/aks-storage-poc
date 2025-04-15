@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: storage-validation-pod
+  namespace: ${NAMESPACE}
+  labels:
+    azure.workload.identity/use: "true"
+spec:
+  serviceAccountName: ${SERVICE_ACCOUNT}
+  volumes:
+  - name: dynamic-storage
+    persistentVolumeClaim:
+      claimName: dynamic-storage-pvc
+  - name: static-storage
+    persistentVolumeClaim:
+      claimName: pvc-azurefile
+  - name: dynamic-blob
+    persistentVolumeClaim:
+      claimName: dynamic-blob-pvc
+  - name: static-blob
+    persistentVolumeClaim:
+      claimName: pvc-blob
+  containers:
+  - name: validation
+    image: alpine:latest
+    command:
+    - sh
+    - -c
+    - |
+      echo "===== DYNAMIC STORAGE VALIDATION ====="
+      if [ -f /dynamic/FILE-hello.txt ]; then
+        echo "✅ SUCCESS: Dynamic storage file found!"
+        echo "Contents:"
+        cat /dynamic/FILE-hello.txt
+        ls -la /dynamic/
+        DYNAMIC_SUCCESS=true
+      else
+        echo "❌ ERROR: Dynamic storage file not found!"
+        ls -la /dynamic/
+        DYNAMIC_SUCCESS=false
+      fi
+
+      echo "===== STATIC STORAGE VALIDATION ====="
+      if [ -f /static/FILE-hello.txt ]; then
+        echo "✅ SUCCESS: Static storage file found!"
+        echo "Contents:"
+        cat /static/FILE-hello.txt
+        ls -la /static/
+        STATIC_SUCCESS=true
+      else
+        echo "❌ ERROR: Static storage file not found!"
+        ls -la /static/
+        STATIC_SUCCESS=false
+      fi
+      
+      echo "===== DYNAMIC BLOB VALIDATION ====="
+      if [ -f /dynamic-blob/BLOB-hello.txt ]; then
+        echo "✅ SUCCESS: Dynamic blob storage file found!"
+        echo "Contents:"
+        cat /dynamic-blob/BLOB-hello.txt
+        ls -la /dynamic-blob/
+        DYNAMIC_BLOB_SUCCESS=true
+      else
+        echo "❌ ERROR: Dynamic blob storage file not found!"
+        ls -la /dynamic-blob/
+        DYNAMIC_BLOB_SUCCESS=false
+      fi
+
+      echo "===== STATIC BLOB VALIDATION ====="
+      if [ -f /static-blob/BLOB-hello.txt ]; then
+        echo "✅ SUCCESS: Static blob storage file found!"
+        echo "Contents:"
+        cat /static-blob/BLOB-hello.txt
+        ls -la /static-blob/
+        STATIC_BLOB_SUCCESS=true
+      else
+        echo "❌ ERROR: Static blob storage file not found!"
+        ls -la /static-blob/
+        STATIC_BLOB_SUCCESS=false
+      fi
+
+      echo "===== VALIDATION SUMMARY ====="
+      FILE_SUCCESS=false
+      BLOB_SUCCESS=false
+      
+      if [ "$DYNAMIC_SUCCESS" = "true" ] && [ "$STATIC_SUCCESS" = "true" ]; then
+        echo "✅ FILE STORAGE: Both dynamic and static working correctly!"
+        FILE_SUCCESS=true
+      elif [ "$DYNAMIC_SUCCESS" = "true" ]; then
+        echo "⚠️ FILE STORAGE: Only dynamic storage working correctly!"
+      elif [ "$STATIC_SUCCESS" = "true" ]; then
+        echo "⚠️ FILE STORAGE: Only static storage working correctly!"
+      else
+        echo "❌ FILE STORAGE: Both dynamic and static failed validation!"
+      fi
+      
+      if [ "$DYNAMIC_BLOB_SUCCESS" = "true" ] && [ "$STATIC_BLOB_SUCCESS" = "true" ]; then
+        echo "✅ BLOB STORAGE: Both dynamic and static working correctly!"
+        BLOB_SUCCESS=true
+      elif [ "$DYNAMIC_BLOB_SUCCESS" = "true" ]; then
+        echo "⚠️ BLOB STORAGE: Only dynamic storage working correctly!"
+      elif [ "$STATIC_BLOB_SUCCESS" = "true" ]; then
+        echo "⚠️ BLOB STORAGE: Only static storage working correctly!"
+      else
+        echo "❌ BLOB STORAGE: Both dynamic and static failed validation!"
+      fi
+      
+      if [ "$FILE_SUCCESS" = "true" ] && [ "$BLOB_SUCCESS" = "true" ]; then
+        echo "✅ OVERALL: All storage types working correctly!"
+        exit 0
+      elif [ "$FILE_SUCCESS" = "true" ]; then
+        echo "⚠️ PARTIAL: Only file storage working correctly!"
+        exit 1
+      elif [ "$BLOB_SUCCESS" = "true" ]; then
+        echo "⚠️ PARTIAL: Only blob storage working correctly!"
+        exit 2
+      else
+        echo "❌ FAILED: All storage types failed validation!"
+        exit 3
+      fi
+    volumeMounts:
+    - name: dynamic-storage
+      mountPath: /dynamic
+    - name: static-storage
+      mountPath: /static
+    - name: dynamic-blob
+      mountPath: /dynamic-blob
+    - name: static-blob
+      mountPath: /static-blob
+  restartPolicy: Never 
