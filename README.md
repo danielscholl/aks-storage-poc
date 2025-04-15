@@ -26,17 +26,15 @@ The tutorial demonstrates how to integrate Azure Kubernetes Service (AKS) with A
 
 To deploy this PoC successfully, ensure the following prerequisites are in place:
 
-- **Azure CLI** (version 2.47.0 or later)
-- **kubectl** (compatible with your AKS version)
+- **Azure subscription** with permission to create AKS clusters and manage identity/storage
 - **Python** (version 3.11 or later)
 - **uv** (installed via `pip install uv`)
-- **Azure subscription** with permission to create AKS clusters and manage identity/storage
-- **Bash shell environment** (Linux, macOS, or Windows Subsystem for Linux)
-
+- **Azure CLI** (version 2.70.0 or later)
+- **kubectl** (installed via `az aks --install-cli`)
 
 ## Automated Implementation
 
-Use the provided Python script to automate the process of testing the Azure Storage integration with AKS. The script supports multiple options for flexibility.
+Use the provided Python script to automate the process of deploying the desired Azure Storage integration with AKS use cases.
 
 > For fully manual flows, refer to the [tutorial](docs/tutorial.md) or use the bash [setup.sh](scripts/setup.sh) script.
 
@@ -46,6 +44,7 @@ The script supports the following configurations:
 - Blob Storage + Dynamic Provisioning
 - Azure Files + Static Provisioning
 - Azure Files + Dynamic Provisioning
+- Blob Storage + Static Provisioning + Disabled Shared Keys
 
 ### Usage
 Run the script with:
