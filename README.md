@@ -51,13 +51,13 @@ The script supports the following configurations:
 Run the script with:
 
 ```bash
-uv run scripts/aks-storage.py [OPTIONS]
+ Usage: uv run aks-storage.py [OPTIONS]
+                                                                                                                                                
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --group                     TEXT                  Group name for the settings [default: aks-storage-poc]           │
+│ --storage                   [Blob|File]           Storage Type to use (Blob or File) [default: None]               │
+│ --provision                 [Persistent|Dynamic]  Provision Type to use (Persistent or Dynamic) [default: None]    │
+│ --disable-shared-key                              Disable shared key access on the storage account.                │
+│ --help                                            Show this message and exit.                                      │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
-
-### Options
-- `--group [TEXT]`: Custom group name (default: `aks-storage-poc`)
-- `--storage [Blob|File]`: Storage type (`Blob` or `File`)
-- `--provision [Persistent|Dynamic]`: Provisioning type (`Persistent` or `Dynamic`)
-- `--disable-shared-key`: Disable shared key access
-- `--help`: Show help and exit
-
