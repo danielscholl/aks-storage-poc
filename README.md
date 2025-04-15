@@ -2,7 +2,7 @@
 
 **Secure AKS and Azure Storage Integration Without Secrets**
 
-> Kubernetes teams adopting Azure face a critical challenge: `securely accessing storage without violating security standards`. This proof-of-concept attempts to demonstrate how to leverage storage removing the dependency of keys.
+> Kubernetes teams adopting Azure face a critical challenge: `securely accessing storage without violating security standards`.
 
 ## Purpose
 
