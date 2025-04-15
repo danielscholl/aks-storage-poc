@@ -17,9 +17,9 @@ This PoC attempts to address critical limitations in keyless Azure Storage acces
 
 ## The Proof of Concept
 
-This proof-of-concept (PoC) highlights the critical need for keyless access to Azure Storage to meet compliance and enhance operational security. By addressing existing gaps in Microsoft's implementation, it offers practical guidance and solutions for Kubernetes teams. 
+Organizations have a critical need for keyless access to Azure Storage to meet compliance and enhance operational security. By searching for existing gaps in Microsoft's implementation, this PoC offers practical guidance and the ability to test different configurations. 
 
-The tutorial demonstrates how to integrate Azure Kubernetes Service (AKS) with Azure Storage using Microsoft Entra Workload Identity, ensuring secure, scalable, and compliant storage access. The following sections provide a detailed, step-by-step guide to implementing this approach.
+The provided tool enables users to explore and deploy various configurations for integrating Azure Kubernetes Service (AKS) with Azure Storage. It supports combinations of persistent or dynamic storage, blob or file storage, and options to enable or disable shared key capabilities. The goal is to understand the configuations and see how they actually work. The following sections provide a detailed, step-by-step guide to implementing these configurations.
 
 
 ## Before You Begin
