@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This PoC attempts to address critical limitations in keyless Azure Files access with AKS, offering a practical path forward. The goal is to enable organizations to align AKS storage strategies with modern security practices, particularly zero-trust and least-privilege principles, while reducing operational friction.
+This PoC attempts to address critical limitations in keyless Azure Storage access with AKS, offering a practical path forward. The goal is to enable organizations to align AKS storage strategies with modern security practices, particularly zero-trust and least-privilege principles, while reducing operational friction.
 
 ## Choose Your Path
 
