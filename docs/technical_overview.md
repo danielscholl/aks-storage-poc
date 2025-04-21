@@ -10,23 +10,25 @@ To enable keyless, compliant access between Kubernetes workloads and Azure Stora
 
 The following matrix outlines what is currently supported for keyless storage access in AKS environments:
 
-| Storage Type | Provisioning Method | Support for Keyless Access | Notes |
-|-------------|---------------------|--------------------------|-------|
-| Azure Files | Static Provisioning | ❌ Not Supported | Requires `--allow-shared-key-access true` |
-| Azure Files | Dynamic Provisioning | ❌ Not Supported | Requires `--allow-shared-key-access true` |
-| Azure Blob | Static Provisioning | ✅ Supported | Works with `--allow-shared-key-access false` |
-| Azure Blob | Dynamic Provisioning | ❌ Not Supported | Requires `--allow-shared-key-access true` |
+| Storage Type | Provisioning Method  | Support for Keyless Access               | Notes                                                  |
+| ------------ | -------------------- | ---------------------------------------- | ------------------------------------------------------ |
+| Azure Files  | Static Provisioning  | ❌ Not Supported                          | Requires `--allow-shared-key-access true`              |
+| Azure Files  | Dynamic Provisioning | ❌ Not Supported                          | Requires `--allow-shared-key-access true`              |
+| Azure Blob   | Static Provisioning  | ⚠️ Partial Support (OSS driver required) | Requires helm installation of the OSS Blob CSI driver. |
+| Azure Blob   | Dynamic Provisioning | ❌ Not Supported                          | Requires `--allow-shared-key-access true`              |
 
 ## Architecture Overview
 
 This architecture demonstrates a secure, keyless integration between AKS and Azure Storage, relying on Microsoft Entra Workload Identity and Azure-managed resources.
+
+> ⚠️ **Important:** For keyless access to Azure Blob storage with workload identity, you must manually install the open-source (OSS) Blob CSI driver via Helm. The AKS-managed Blob CSI driver (`--enable-blob-driver`) does not support workload identity in keyless mode.
 
 ### Key Integration Elements
 
 - **AKS with OIDC Issuer Enabled:** OIDC support in the AKS control plane enables identity federation for Kubernetes workloads.
 - **User-Assigned Managed Identity:** Bound to a Kubernetes `ServiceAccount`, this identity authenticates to Azure without the need for storage keys or SAS tokens.
 - **Federated Credential Binding:** The managed identity is federated with the AKS workload identity system to allow token-based access to Azure Blob and Files.
-- **CSI Drivers:** Azure-provided CSI drivers for Blob and Files support mounting persistent volumes into Kubernetes pods. Only Blob supports keyless configurations.
+- **CSI Drivers:** Azure-provided CSI drivers for Blob and Files support mounting persistent volumes into Kubernetes pods. However, the AKS-managed drivers do not support keyless access via workload identity. For this capability, only the open-source Blob CSI driver—installed via Helm—can be used.
 - **RBAC Enforcement:** Fine-grained Azure RBAC permissions control access to storage resources, maintaining a least-privilege security posture.
 
 This setup eliminates the need for embedded credentials, improves compliance, and paves the way for secure automation—even if certain limitations still apply.
@@ -54,7 +56,7 @@ Azure Files does not support keyless access in any dynamic provisioning scenario
 
 ### Static Provisioning with Azure Blob
 
-Static provisioning for Azure Blob storage is fully supported in a keyless configuration. The process involves manual creation of a storage account and blob container, followed by Kubernetes resource definitions that reference the blob using the `azureblob-fuse-premium` CSI driver. This approach enables secure access using federated identity, without any keys or tokens.
+Static provisioning for Azure Blob storage is fully supported in a keyless configuration. However, for keyless access with workload identity, you must use the open-source Blob CSI driver installed via Helm. The process involves manual creation of a storage account and blob container, followed by Kubernetes resource definitions that reference the blob using the `azureblob-fuse-premium` CSI driver. This approach enables secure access using federated identity, without any keys or tokens.
 
 Additionally, the `azureblob-nfs-premium` driver supports NFS-based access. However, NFS mounts do not offer in-transit encryption and require strict network access controls, making them unsuitable for many compliance-sensitive workloads.
 
@@ -68,31 +70,31 @@ Azure Files currently requires shared key access, even when provisioned manually
 
 ### Dynamic CSI Limitations
 
-- `azureblob-fuse-premium` supports keyless dynamic provisioning *only if* the storage account is created manually
+- `azureblob-fuse-premium` supports keyless dynamic provisioning *only if* the storage account is created manually and the OSS driver is used
 - Azure Files does **not** support keyless access in dynamic scenarios
 - Kubernetes `StorageClass` cannot yet create accounts with `--allow-shared-key-access false`
+- The AKS-managed Blob CSI driver does not support workload identity in keyless mode. Use the OSS driver for this scenario.
 
 ## Core Azure Components Used
 
 These Azure building blocks form the foundation of the identity-based storage integration:
 
-| Component | Role in Solution |
-|----------|------------------|
-| AKS | Host for container workloads |
-| Azure Storage (Blob & Files) | Persistent backing store |
-| Microsoft Entra Workload Identity | Authentication to Azure resources |
-| User-Assigned Managed Identity | Identity used by Kubernetes workload |
-| Azure RBAC | Authorizes access to Blob/File containers |
+| Component                         | Role in Solution                          |
+| --------------------------------- | ----------------------------------------- |
+| AKS                               | Host for container workloads              |
+| Azure Storage (Blob & Files)      | Persistent backing store                  |
+| Microsoft Entra Workload Identity | Authentication to Azure resources         |
+| User-Assigned Managed Identity    | Identity used by Kubernetes workload      |
+| Azure RBAC                        | Authorizes access to Blob/File containers |
 
 ### Kubernetes Constructs
 
-| Construct | Purpose |
-|----------|---------|
-| `ServiceAccount` | Tied to managed identity for workload identity |
-| `PersistentVolume` | Defines how to connect to external storage |
-| `PersistentVolumeClaim` | Application-level request for storage |
-| `Job` | Workload used to validate mount and access behavior |
-
+| Construct               | Purpose                                             |
+| ----------------------- | --------------------------------------------------- |
+| `ServiceAccount`        | Tied to managed identity for workload identity      |
+| `PersistentVolume`      | Defines how to connect to external storage          |
+| `PersistentVolumeClaim` | Application-level request for storage               |
+| `Job`                   | Workload used to validate mount and access behavior |
 
 ## Known Issues and Community Discussions
 
