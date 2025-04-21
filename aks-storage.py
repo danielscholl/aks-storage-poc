@@ -114,7 +114,7 @@ def run_command(
 
     # Only display the command if requested
     if display:
-        # Determine command type (azure, kubectl, or other)
+        # Determine command type (azure, kubectl, helm, or other)
         style = None
         if cmd_list[0] == "az":
             style = "azure"
@@ -122,6 +122,9 @@ def run_command(
         elif cmd_list[0] == "kubectl":
             style = "kubectl"
             title = "[kubectl]Kubernetes Command[/kubectl]"
+        elif cmd_list[0] == "helm":
+            style = "cyan"
+            title = "[bold]Helm Command[/bold]"
         else:
             title = "Command"
 
@@ -158,6 +161,48 @@ def display_k8s_yaml(
         header = f"[{header_style}]{title}[/{header_style}]"
 
     console.print(Panel(yaml_syntax, title=header, border_style="cyan", expand=False))
+
+
+def run_helm_with_values(
+    helm_cmd: List[str],
+    values_content: str,
+    values_title: str,
+    description: str,
+    temp_suffix: str = ".yaml"
+) -> subprocess.CompletedProcess:
+    """Run a Helm command with a values file and display both nicely."""
+    # Display the values file content
+    display_k8s_yaml(values_content, values_title, "Helm Values")
+    
+    # Create a temp file and make sure it gets cleaned up
+    values_file_path = None
+    try:
+        # Write values to temp file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=temp_suffix, delete=False) as values_file:
+            values_file_path = values_file.name
+            values_file.write(values_content)
+        
+        # Add the values file to the command
+        if "-f" not in helm_cmd and "--values" not in helm_cmd:
+            helm_cmd.extend(["-f", values_file_path])
+        
+        # Execute the command using run_command helper
+        result = run_command(
+            helm_cmd,
+            description=description,
+            display=True
+        )
+        
+        return result
+    
+    finally:
+        # Clean up the temp file
+        if values_file_path:
+            try:
+                os.unlink(values_file_path)
+            except Exception as e:
+                # Just log the error but don't fail
+                console.print(f"[warning]Warning: Failed to remove temporary file {values_file_path}: {str(e)}[/warning]")
 
 
 def display_command_result(
@@ -282,6 +327,9 @@ class AzureManager:
         self.identity_principal_id = ""
         self.identity_client_id = ""
         self.oidc_issuer_url = ""
+        
+        # Flag to determine if manual Blob CSI driver installation is needed
+        self.install_blob_driver_manually = False
 
         # Storage specific
         self.blob_container_name = "mycontainer"
@@ -891,6 +939,169 @@ class AzureManager:
                 f"✓ Required roles assigned to identity: [bold]{self.config.identity_name}[/bold]"
             )
 
+    def install_blob_csi_driver(self) -> None:
+        """Install the Blob CSI driver manually via Helm."""
+        # Use plain console.print instead of a live status to avoid multiple live displays
+        console.print("[info]Installing Blob CSI driver via Helm...[/info]")
+        
+        # Check if we have an identity client ID before proceeding
+        if not self.identity_client_id:
+            raise Exception("Cannot install Blob CSI driver: identity_client_id is not set")
+            
+        # First, add the Helm repository
+        # First check if helm is installed
+        try:
+            check_helm_cmd = ["which", "helm"]
+            check_helm_result = subprocess.run(check_helm_cmd, capture_output=True, text=True)
+            if check_helm_result.returncode != 0:
+                console.print("[error]Helm is not installed or not in PATH. Cannot install Blob CSI driver.[/error]")
+                console.print("[warning]Will continue with deployment, but Blob CSI driver will not be installed.[/warning]")
+                return
+        except Exception as e:
+            console.print(f"[error]Error checking for Helm installation: {str(e)}[/error]")
+            console.print("[warning]Will continue with deployment, but Blob CSI driver may not be properly installed.[/warning]")
+            return
+            
+        # Add the Helm repository
+        try:
+            add_repo_cmd = [
+                "helm",
+                "repo",
+                "add",
+                "blob-csi-driver",
+                "https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/charts",
+            ]
+            
+            add_repo_result = run_command(
+                add_repo_cmd,
+                description="Add Blob CSI Driver Repository",
+                display=True
+            )
+            
+            display_command_result(
+                add_repo_result,
+                success_message="Blob CSI driver Helm repository added successfully",
+                error_message="Failed to add Helm repository, but will continue",
+                show_output=False
+            )
+        except Exception as e:
+            console.print(f"[warning]Error adding Helm repository: {str(e)}[/warning]")
+            console.print("[warning]Will try to continue with installation anyway...[/warning]")
+        
+        # Update Helm repositories
+        try:
+            update_repo_cmd = ["helm", "repo", "update"]
+            
+            update_repo_result = run_command(
+                update_repo_cmd,
+                description="Update Repositories",
+                display=True
+            )
+            
+            display_command_result(
+                update_repo_result,
+                success_message="Helm repositories updated successfully",
+                error_message="Failed to update Helm repositories, but will continue",
+                show_output=False
+            )
+        except Exception as e:
+            console.print(f"[warning]Error updating Helm repositories: {str(e)}[/warning]")
+            console.print("[warning]Will try to continue with installation anyway...[/warning]")
+        
+        # Install the Blob CSI driver with proper workload identity settings
+        driver_version = "v1.26.1"  # Use the latest stable version
+        console.print("[info]Installing Blob CSI driver with workload identity support...[/info]")
+        
+        try:
+            # Create values file content
+            values_content = f"""
+blobfuse2:
+  enabled: true
+
+workloadIdentity:
+  clientID: {self.identity_client_id}
+
+node:
+  tokenRequests:
+    - audience: api://AzureADTokenExchange
+  
+controller:
+  replicas: 1
+  runOnControlPlane: false
+
+node:
+  tolerations:
+    - key: kubernetes.azure.com/role
+      operator: Equal
+      value: agent
+      effect: NoSchedule
+"""
+            # Prepare helm install command
+            install_cmd = [
+                "helm",
+                "upgrade",
+                "--install",
+                "blob-csi",
+                "blob-csi-driver/blob-csi-driver",
+                "--namespace",
+                "kube-system",
+                "--version",
+                driver_version
+            ]
+            
+            # Use our helper function to run the helm command with values
+            install_result = run_helm_with_values(
+                install_cmd,
+                values_content,
+                "Blob CSI Driver Values",
+                "Install Blob CSI Driver"
+            )
+                
+            # Display the result
+            display_command_result(
+                install_result,
+                success_message="Blob CSI driver installed successfully",
+                error_message="Failed to install Blob CSI driver",
+                show_output=False
+            )
+            
+            if install_result.returncode != 0:
+                console.print("[warning]Will continue with deployment, but Blob CSI driver may not be properly installed.[/warning]")
+                
+        except Exception as e:
+            console.print(f"[error]Error executing Helm install command: {str(e)}[/error]")
+            console.print("[warning]Will continue with deployment, but Blob CSI driver may not be properly installed.[/warning]")
+            return
+        
+        # Wait for the CSI driver pods to be running
+        console.print("[info]Waiting for Blob CSI driver pods to be ready...[/info]")
+        time.sleep(10)  # Give pods some time to start
+        
+        # Check if driver pods are running
+        try:
+            check_pods_cmd = [
+                "kubectl",
+                "get",
+                "pods",
+                "-n",
+                "kube-system",
+                "-l",
+                "app=csi-blob-node",
+                "--no-headers",
+            ]
+            
+            check_pods_result = subprocess.run(check_pods_cmd, capture_output=True, text=True)
+            
+            if check_pods_result.returncode == 0 and check_pods_result.stdout and check_pods_result.stdout.strip():
+                console.print("[success]✓ Blob CSI driver pods are running[/success]")
+            else:
+                console.print("[warning]Blob CSI driver pods may not be ready yet. Installation will continue, but you might need to verify manually.[/warning]")
+                if check_pods_result.stderr:
+                    console.print(f"[info]Details: {check_pods_result.stderr.strip()}[/info]")
+        except Exception as e:
+            console.print(f"[warning]Could not check if Blob CSI driver pods are running: {str(e)}[/warning]")
+            console.print("[warning]Installation will continue, but you might need to verify manually.[/warning]")
+
     def create_aks_cluster(self) -> None:
         """Create AKS cluster with workload identity enabled."""
         with console.status(
@@ -914,9 +1125,24 @@ class AzureManager:
                 "--enable-workload-identity",
             ]
 
-            # Add blob driver flag if using blob storage
-            if self.config.storage_type == StorageType.BLOB:
+            # Add blob driver flag only if using blob storage with shared key access
+            # If keyless access is enabled, we need to install the driver manually
+            if self.config.storage_type == StorageType.BLOB and self.config.allow_shared_key_access:
                 cmd.append("--enable-blob-driver")
+                self.install_blob_driver_manually = False
+            elif self.config.storage_type == StorageType.BLOB and not self.config.allow_shared_key_access:
+                self.install_blob_driver_manually = True
+                console.print(
+                    Panel(
+                        "When using Blob Storage with keyless access (--disable-shared-key), "
+                        "the AKS-installed Blob CSI driver does not support workload identity properly.\n"
+                        "The driver will be installed manually via Helm after cluster creation.",
+                        title="[bold yellow]Manual Blob CSI Driver Installation Required[/bold yellow]",
+                        border_style="yellow",
+                    )
+                )
+            else:
+                self.install_blob_driver_manually = False
 
             # Create the cluster
             create_result = run_command(
@@ -974,7 +1200,10 @@ class AzureManager:
                 oidc_cmd, description="Get OIDC issuer URL", display=True
             )
 
-            self.oidc_issuer_url = oidc_result.stdout.strip()
+            self.oidc_issuer_url = oidc_result.stdout.strip() if oidc_result.stdout else ""
+            
+            if not self.oidc_issuer_url:
+                console.print("[warning]Failed to get OIDC issuer URL. Continuing anyway...[/warning]")
 
             # Display AKS information in a table
             aks_table = Table(title="AKS Cluster Details", box=ROUNDED)
@@ -1032,7 +1261,7 @@ metadata:
 
                 # Show a friendlier message
                 console.print(
-                    "[kubectl]kubectl apply[/kubectl] - Applying ServiceAccount for workload identity"
+                    "[kubectl]Kubernetes Command:[/kubectl] Applying ServiceAccount for workload identity"
                 )
 
                 # Run kubectl apply without showing the actual command
@@ -1064,28 +1293,31 @@ metadata:
                     raise typer.Exit(code=1)
 
             # Create federated identity credential
-            subprocess.run(
-                [
-                    "az",
-                    "identity",
-                    "federated-credential",
-                    "create",
-                    "--name",
-                    "storage-credential",
-                    "--identity-name",
-                    self.config.identity_name,
-                    "--resource-group",
-                    self.config.resource_group,
-                    "--issuer",
-                    self.oidc_issuer_url,
-                    "--subject",
-                    "system:serviceaccount:default:storage-sa",
-                    "--audience",
-                    "api://AzureADTokenExchange",
-                ],
-                capture_output=True,
-                text=True,
-            )
+            if not self.oidc_issuer_url:
+                console.print("[warning]Skipping federated identity credential creation due to missing OIDC issuer URL[/warning]")
+            else:
+                subprocess.run(
+                    [
+                        "az",
+                        "identity",
+                        "federated-credential",
+                        "create",
+                        "--name",
+                        "storage-credential",
+                        "--identity-name",
+                        self.config.identity_name,
+                        "--resource-group",
+                        self.config.resource_group,
+                        "--issuer",
+                        self.oidc_issuer_url,
+                        "--subject",
+                        "system:serviceaccount:default:storage-sa",
+                        "--audience",
+                        "api://AzureADTokenExchange",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
 
             console.print("✓ Workload identity configured successfully")
 
@@ -1268,7 +1500,7 @@ spec:
 
                     # Show a friendlier command to the user (hiding the temp file path)
                     console.print(
-                        f"[kubectl]kubectl apply[/kubectl] - Applying {description} for {self.config.storage_type.value} Storage"
+                        f"[kubectl]Kubernetes Command:[/kubectl] Applying {description} for {self.config.storage_type.value} Storage"
                     )
 
                     # Run kubectl apply without showing the actual command
@@ -1449,7 +1681,7 @@ spec:
 
                     # Show a friendlier command to the user
                     console.print(
-                        f"[kubectl]kubectl apply[/kubectl] - Applying {description} for {self.config.storage_type.value} Storage (Dynamic)"
+                        f"[kubectl]Kubernetes Command:[/kubectl] Applying {description} for {self.config.storage_type.value} Storage (Dynamic)"
                     )
 
                     # Run kubectl apply without showing the actual command
@@ -1600,10 +1832,11 @@ def main(
 
         console.print(
             Panel(
-                "Keyless mode (--disable-shared-key) only supports Blob Storage with Static Provisioning.\n"
-                "Automatically selecting this configuration.",
-                title="[bold yellow]Keyless Mode Restriction[/bold yellow]",
-                border_style="yellow",
+            "Keyless mode (--disable-shared-key) is only compatible with Blob Storage using Static Provisioning.\n"
+            "This configuration has been automatically selected for you.\n\n"
+            "IMPORTANT: In keyless mode, the AKS-provided Blob CSI driver is not supported and the open-source Blob CSI driver will be installed.\n",
+            title="[bold yellow]Keyless Mode Requirements[/bold yellow]",
+            border_style="yellow",
             )
         )
     else:
@@ -1742,6 +1975,11 @@ def main(
                 azure_manager.create_resource_group()
             azure_manager.create_managed_identity()
             azure_manager.create_aks_cluster()
+            
+            # Install Blob CSI driver manually if needed for the base AKS cluster
+            if azure_manager.install_blob_driver_manually:
+                azure_manager.install_blob_csi_driver()
+                
             azure_manager.configure_workload_identity()
 
             # Only create a storage account if at least one use case involves static provisioning
@@ -1873,6 +2111,18 @@ def main(
                         case_manager.storage_account_id = (
                             azure_manager.storage_account_id
                         )
+                        
+                        # If this is Blob storage with keyless access, mark it for manual Blob CSI driver installation
+                        if case_storage == StorageType.BLOB and not case_shared_key:
+                            case_manager.install_blob_driver_manually = True
+                            console.print(
+                                Panel(
+                                    "Using keyless access with Blob Storage requires manual Blob CSI driver installation.\n"
+                                    "The driver will be installed via Helm for this use case.",
+                                    title="[bold yellow]Manual Blob CSI Driver Required[/bold yellow]",
+                                    border_style="yellow",
+                                )
+                            )
 
                         if case_storage == StorageType.BLOB:
                             # Create blob container in the shared storage account
@@ -2081,6 +2331,10 @@ def main(
 
             # Step 5: Create AKS cluster
             azure_manager.create_aks_cluster()
+            
+            # Install Blob CSI driver manually if needed
+            if azure_manager.install_blob_driver_manually:
+                azure_manager.install_blob_csi_driver()
 
             # Step 6: Configure workload identity
             azure_manager.configure_workload_identity()
