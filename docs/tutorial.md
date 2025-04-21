@@ -8,7 +8,7 @@ First, let's create the necessary Azure resources:
 # Set variables
 export UNIQUE_ID=$(openssl rand -hex 3)
 export RESOURCE_GROUP="aks-storage-poc"
-export LOCATION="eastus"
+export LOCATION="centralus"
 export AKS_NAME="aks-storage-${UNIQUE_ID}"
 export STORAGE_ACCOUNT_NAME="aksstorage${UNIQUE_ID}"
 export IDENTITY_NAME="storage-workload-identity"
@@ -34,6 +34,7 @@ az storage account create \
   --location $LOCATION \
   --sku Standard_LRS \
   --kind StorageV2 \
+  --allow-blob-public-access false \
   --allow-shared-key-access false  # Set to true for Azure Files
 
 # Get storage account ID
@@ -53,7 +54,6 @@ az aks create \
   --enable-managed-identity \
   --enable-oidc-issuer \
   --enable-workload-identity \
-  --enable-blob-driver \
   --generate-ssh-keys
 
 # Get credentials
@@ -77,9 +77,6 @@ export NODE_RESOURCE_GROUP=$(az aks show --resource-group $RESOURCE_GROUP --name
 Next, let's set up the necessary Kubernetes resources for workload identity:
 
 ```bash
-# Create namespace for our application
-kubectl create namespace storage-demo
-
 # Create a service account and annotate with client ID
 export SERVICE_ACCOUNT_NAME="storage-sa"
 
@@ -120,6 +117,36 @@ az role assignment create \
   --assignee $IDENTITY_PRINCIPAL_ID \
   --role "Reader" \
   --scope "$NODE_RG_ID"
+```
+
+### Step 3: Install (OSS) Blob CSI Driver'
+
+> Note: AKS normally installs a blob CSI driver automatically using the   --enable-blob-driver flag.  We are installing OSS latest version.
+
+#### Helm Install
+
+```bash
+# Add the helm repository
+helm repo add blob-csi-driver https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/charts
+helm repo update
+
+# Install the Blob CSI driver with inline values
+DRIVER_VERSION="v1.26.1"
+helm upgrade --install blob-csi blob-csi-driver/blob-csi-driver \
+  --namespace kube-system \
+  --version $DRIVER_VERSION \
+  --set blobfuse2.enabled=true \
+  --set workloadIdentity.clientID=${IDENTITY_CLIENT_ID} \
+  --set "node.tokenRequests[0].audience=api://AzureADTokenExchange" \
+  --set controller.replicas=1 \
+  --set controller.runOnControlPlane=false \
+  --set "node.tolerations[0].key=kubernetes.azure.com/role" \
+  --set "node.tolerations[0].operator=Equal" \
+  --set "node.tolerations[0].value=agent" \
+  --set "node.tolerations[0].effect=NoSchedule"
+
+# Wait for pod to start
+kubectl get pods -n kube-system --watch | grep "csi-blob-"
 ```
 
 ### Step 3: Persistent Volume Configuration

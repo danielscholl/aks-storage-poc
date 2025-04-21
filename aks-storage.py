@@ -215,7 +215,7 @@ class Config(BaseModel):
     group: str
     storage_type: StorageType
     provision_type: ProvisionType
-    location: str = "eastus"
+    location: str = "centralus"
     unique_id: str = ""
     resource_group: str = ""
     storage_account: str = ""
@@ -603,6 +603,8 @@ class AzureManager:
                         "StorageV2",
                         "--allow-shared-key-access",
                         str(allow_shared_key_access).lower(),
+                        "--allow-blob-public-access",
+                        "false",
                         "--query",
                         "id",
                         "-o",

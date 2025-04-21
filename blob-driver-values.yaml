@@ -1,0 +1,9 @@
+blobfuse2:
+  enabled: true            # keep blobfuse2 on the node
+
+workloadIdentity:
+  clientID:  5593ab42-08b5-43ad-89b6-441ce2798eb4
+
+node:
+  tokenRequests:           # <‑‑ not in the default values, you add it here
+    - audience: api://AzureADTokenExchange
